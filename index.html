@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SLMS - 기업용 소프트웨어 라이선스 관리 (HR Linked)</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Firebase SDKs (Dual Engine Support) -->
+    <script type="module">
+        import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy, setDoc, getDoc, collectionGroup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+
+        window.firebaseModules = {
+            initializeApp, getApp, getApps, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken,
+            getFirestore, collection, addDoc, getDocs, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy, setDoc, getDoc, collectionGroup,
+            getAnalytics
+        };
+    </script>
+
+    <style>
+        body { background-color: #f3f4f6; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; }
+        .glass-panel { background: white; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); border-radius: 0.75rem; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .spinner { border: 3px solid rgba(0, 0, 0, 0.1); border-radius: 50%; border-top: 3px solid #3b82f6; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .custom-checkbox:checked { background-color: #10b981; border-color: #10b981; }
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+        .sort-icon::after { content: '↕'; font-size: 0.7em; margin-left: 4px; opacity: 0.3; }
+        .sort-asc::after { content: '↑'; opacity: 1; color: #2563eb; }
+        .sort-desc::after { content: '↓'; opacity: 1; color: #2563eb; }
+        
+        .tooltip-container { position: relative; }
+        .tooltip-text { visibility: hidden; width: 220px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 10; bottom: 125%; left: 50%; margin-left: -110px; opacity: 0; transition: opacity 0.3s; font-size: 0.75rem; pointer-events: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
+        .tooltip-text::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -5px; border-width: 5px; border-style: solid; border-color: #333 transparent transparent transparent; }
+        
+        @keyframes pulse-green { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+        .status-dot-active { animation: pulse-green 2s infinite; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+        const { initializeApp, getApp, getApps, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken,
+                getFirestore, collection, addDoc, getDocs, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy, setDoc, getDoc, collectionGroup,
+                getAnalytics } = window.firebaseModules;
+
+        // --- Configuration ---
+        // 1. SLMS (Target App) - [UPDATED] 사용자 요청 설정 적용
+        const slmsConfig = {
+            apiKey: "AIzaSyCqVHswK-HbTTKSECtH02JKDSLt2zuihts",
+            authDomain: "global-mobility-system.firebaseapp.com",
+            projectId: "global-mobility-system",
+            storageBucket: "global-mobility-system.firebasestorage.app",
+            messagingSenderId: "302753143380",
+            appId: "1:302753143380:web:79bb95b286c4806213abc1",
+            measurementId: "G-TKBLSSTJBW"
+        };
+
+        // 2. HR Manager (Source App) - 기존 설정 유지 (읽기 전용)
+        const hrConfig = {
+            apiKey: "AIzaSyDm0qnGzq8P3zBBqW_4qjlMd9aq-QKrDyU",
+            authDomain: "hr-manager-6635c.firebaseapp.com",
+            projectId: "hr-manager-6635c",
+            storageBucket: "hr-manager-6635c.firebasestorage.app",
+            messagingSenderId: "796639392690",
+            appId: "1:796639392690:web:f218aa1f65c3b01518aaab"
+        };
+
+        const slmsApp = getApps().find(a => a.name === "[DEFAULT]") || initializeApp(slmsConfig);
+        const slmsDb = getFirestore(slmsApp);
+        const slmsAuth = getAuth(slmsApp);
+
+        let hrDb = null;
+        let hrAuth = null;
+        try {
+            const hrApp = getApps().find(a => a.name === "hrApp") || initializeApp(hrConfig, "hrApp");
+            hrDb = getFirestore(hrApp);
+            hrAuth = getAuth(hrApp);
+        } catch(e) { console.error("HR Engine Init Error:", e); }
+
+        // --- Utils ---
+        const formatMoney = (amount) => amount ? new Intl.NumberFormat('ko-KR').format(amount) : '0';
+        
+        const downloadCSV = (data, filename) => {
+            const bom = "\uFEFF";
+            const csvContent = bom + data.map(e => e.join(",")).join("\n");
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        const getSortClass = (key, currentConfig) => {
+            if (currentConfig.key !== key) return "sort-icon cursor-pointer hover:bg-gray-100 select-none";
+            return `sort-icon cursor-pointer hover:bg-gray-100 select-none ${currentConfig.direction === 'asc' ? 'sort-asc' : 'sort-desc'}`;
+        };
+
+        const koreanSort = (a, b, key, direction) => {
+            const valA = String(a[key] || '').trim();
+            const valB = String(b[key] || '').trim();
+            const isHangul = (text) => /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(text);
+            const isHangulA = isHangul(valA);
+            const isHangulB = isHangul(valB);
+            let comparison = 0;
+            if (isHangulA && !isHangulB) comparison = -1; 
+            else if (!isHangulA && isHangulB) comparison = 1;
+            else comparison = valA.localeCompare(valB, 'ko', { numeric: true });
+            return direction === 'asc' ? comparison : -comparison;
+        };
+
+        // --- Icons ---
+        const Icons = {
+            Dashboard: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>,
+            Users: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
+            License: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
+            Link: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>,
+            Trash: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
+            XMark: () => <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>,
+            Check: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>,
+            Edit: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>,
+            Search: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>,
+            Download: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>,
+            PieChart: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>,
+            Info: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+            Briefcase: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>,
+            Ghost: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
+            CloudOff: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg>,
+            Refresh: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
+            CreditCard: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>,
+            Filter: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
+        };
+
+        // --- UI Fragments ---
+        function NavButton({ active, onClick, icon, label }) {
+            return (
+                <button onClick={onClick} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${active ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}>
+                    {icon}<span className="font-medium">{label}</span>
+                </button>
+            );
+        }
+
+        function StatCard({ title, value, subtext, color="blue", onClick, actionIcon }) {
+            return (
+                <div onClick={onClick} className={`glass-panel p-6 border-l-4 border-${color}-500 ${onClick ? 'cursor-pointer hover:bg-gray-50 group' : ''} relative`}>
+                    <div className="flex justify-between items-start">
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">{title}</h3>
+                        {onClick && <span className="text-gray-400 group-hover:text-blue-500 transition-colors">{actionIcon}</span>}
+                    </div>
+                    <div className="mt-2"><span className="text-3xl font-bold text-gray-900">{value}</span></div>
+                    {subtext && <p className="mt-1 text-sm text-gray-400">{subtext}</p>}
+                </div>
+            );
+        }
+
+        function CostDetailModal({ licenses, onClose }) {
+            const details = useMemo(() => {
+                return licenses
+                    .filter(l => l.type === 'Subscription')
+                    .map(l => {
+                        const cost = parseInt(l.cost) || 0;
+                        const isMonthly = l.paymentCycle === 'Monthly';
+                        const monthlyCost = isMonthly ? cost : Math.round(cost / 12);
+                        return { ...l, monthlyCost, originalCost: cost, isMonthly };
+                    })
+                    .sort((a, b) => b.monthlyCost - a.monthlyCost);
+            }, [licenses]);
+            const total = details.reduce((acc, curr) => acc + curr.monthlyCost, 0);
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in" onClick={onClose}>
+                    <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                            <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2"><Icons.CreditCard /> 월 예상 구독 비용 산출 내역</h3>
+                            <button onClick={onClose} className="hover:bg-gray-200 p-1 rounded transition-colors"><Icons.XMark/></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scroll">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-gray-100 text-xs uppercase text-gray-500 sticky top-0">
+                                    <tr><th className="p-3">SW 명</th><th className="p-3 text-center">결제 주기</th><th className="p-3 text-right">입력 금액</th><th className="p-3 text-right text-blue-600 font-bold">월 환산 금액</th></tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {details.map(item => (
+                                        <tr key={item.id} className="hover:bg-gray-50">
+                                            <td className="p-3 font-medium">{item.name}</td>
+                                            <td className="p-3 text-center"><span className={`px-2 py-1 rounded text-xs ${!item.isMonthly ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>{!item.isMonthly ? '연간' : '월간'}</span></td>
+                                            <td className="p-3 text-right text-gray-500">{item.originalCost.toLocaleString()}</td>
+                                            <td className="p-3 text-right font-bold text-gray-900">{item.monthlyCost.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="p-4 bg-gray-50 border-t flex justify-between items-center">
+                            <span className="text-sm text-gray-500">총 {details.length}개 항목 합계</span>
+                            <span className="text-xl font-bold text-emerald-600">₩{total.toLocaleString()}</span>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Feature Screens ---
+
+        function DashboardPage({ users, licenses, assignments }) {
+            const [showCostDetail, setShowCostDetail] = useState(false);
+            const totalCost = useMemo(() => licenses.reduce((acc, license) => {
+                if (license.type !== 'Subscription') return acc;
+                const cost = parseInt(license.cost) || 0;
+                return acc + (license.paymentCycle !== 'Monthly' ? Math.round(cost / 12) : cost);
+            }, 0), [licenses]);
+
+            const totalSeats = useMemo(() => licenses.reduce((a, c) => a + (parseInt(c.seats)||0), 0), [licenses]);
+            const util = totalSeats > 0 ? Math.round((assignments.length / totalSeats) * 100) : 0;
+
+            const recent = useMemo(() => [...assignments].filter(a=>a.assignedAt).sort((a,b)=>new Date(b.assignedAt)-new Date(a.assignedAt)).slice(0, 5), [assignments]);
+            
+            const unused = useMemo(() => licenses.filter(l => !assignments.some(a=>a.licenseId === l.id)).slice(0, 5), [licenses, assignments]);
+            const typeStats = useMemo(() => { const c = { Subscription: 0, Perpetual: 0, Free: 0 }; licenses.forEach(l => { if(c[l.type] !== undefined) c[l.type]++; }); return c; }, [licenses]);
+            const deptStats = useMemo(() => { const c = {}; assignments.forEach(a => { const u = users.find(x => x.id === a.userId); if (u?.dept) c[u.dept] = (c[u.dept] || 0) + 1; }); return Object.entries(c).sort((a,b) => b[1]-a[1]).slice(0, 5); }, [assignments, users]);
+
+            return (
+                <div className="space-y-6 animate-fade-in">
+                    {showCostDetail && <CostDetailModal licenses={licenses} onClose={() => setShowCostDetail(false)} />}
+                    <h2 className="text-2xl font-bold text-gray-800">현황 대시보드</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <StatCard title="등록된 인원" value={`${users.length}명`} subtext="HR 실시간 연동" color="indigo" />
+                        <StatCard title="관리중인 SW" value={`${licenses.length}개`} subtext="활성 계약" color="purple" />
+                        <StatCard title="월 예상 구독 비용" value={`₩${totalCost.toLocaleString()}`} subtext="클릭하여 상세 보기" color="emerald" onClick={() => setShowCostDetail(true)} actionIcon={<Icons.PieChart/>} />
+                        <StatCard title="라이선스 활용률" value={`${util}%`} subtext={`${assignments.length}/${totalSeats} 시트`} color="orange" />
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="glass-panel p-6">
+                            <h3 className="font-bold text-gray-700 mb-4">라이선스 점유율</h3>
+                            <div className="space-y-4 max-h-60 overflow-y-auto pr-2 custom-scroll">
+                                {licenses.map(l => {
+                                    const u = assignments.filter(a => a.licenseId === l.id && users.some(user => user.id === a.userId)).length;
+                                    const p = Math.min((u/(parseInt(l.seats)||1))*100, 100);
+                                    return <div key={l.id}><div className="flex justify-between text-xs mb-1"><span>{l.name}</span><span className="text-gray-400">{u}/{l.seats}</span></div><div className="w-full bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full ${p>90?'bg-red-500':'bg-blue-500'}`} style={{width:`${p}%`}}></div></div></div>
+                                })}
+                            </div>
+                        </div>
+                        <div className="glass-panel p-6">
+                            <h3 className="font-bold text-gray-700 mb-4">최근 할당 내역</h3>
+                            <table className="min-w-full text-xs text-left">
+                                <thead><tr className="bg-gray-50 border-b"><th className="p-3">이름</th><th className="p-3">SW</th><th className="p-3 text-right">날짜</th></tr></thead>
+                                <tbody>{recent.map(a=>(<tr key={a.id} className="border-b last:border-0 hover:bg-gray-50"><td className="p-3 font-medium">{users.find(u=>u.id===a.userId)?.name}</td><td className="p-3">{licenses.find(l=>l.id===a.licenseId)?.name}</td><td className="p-3 text-right text-gray-400">{new Date(a.assignedAt).toLocaleDateString()}</td></tr>))}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="glass-panel p-6">
+                            <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Icons.PieChart /> 부서별 활용 순위</h3>
+                            <div className="space-y-3">{deptStats.map(([d, c], index) => (<div key={d} className="flex justify-between items-center text-sm"><div className="flex items-center gap-2"><span className="w-5 h-5 bg-blue-50 text-blue-600 rounded flex items-center justify-center font-bold">{index+1}</span>{d}</div><span className="font-bold">{c}건</span></div>))}</div>
+                        </div>
+                        <div className="glass-panel p-6">
+                            <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Icons.Briefcase /> 계약 형태 분포</h3>
+                            <div className="space-y-4 pt-2">
+                                <div className="flex justify-between text-sm"><span>구독형</span><span className="font-bold text-blue-600">{typeStats.Subscription}개</span></div>
+                                <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden"><div className="bg-blue-500 h-full" style={{width: `${(typeStats.Subscription / (licenses.length||1))*100}%`}}></div></div>
+                                <div className="flex justify-between text-sm"><span>영구형</span><span className="font-bold text-green-600">{typeStats.Perpetual}개</span></div>
+                                <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden"><div className="bg-green-500 h-full" style={{width: `${(typeStats.Perpetual / (licenses.length||1))*100}%`}}></div></div>
+                            </div>
+                        </div>
+                        <div className="glass-panel p-6 border-l-4 border-gray-300">
+                            <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Icons.Ghost /> 유휴 라이선스</h3>
+                            <div className="space-y-2">{unused.map(l => (<div key={l.id} className="text-xs bg-gray-50 p-2 rounded flex justify-between border border-gray-100"><span>{l.name}</span><span className="text-emerald-600 font-bold">대기중</span></div>))}</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function UserManagement({ users }) {
+            const [searchTerm, setSearchTerm] = useState('');
+            const sortedUsers = useMemo(() => [...users].sort((a, b) => a.name.localeCompare(b.name, 'ko')), [users]);
+            const filteredUsers = useMemo(() => searchTerm ? sortedUsers.filter(u => u.name.includes(searchTerm) || u.dept.includes(searchTerm)) : sortedUsers, [sortedUsers, searchTerm]);
+            
+            return (
+                <div className="space-y-6 animate-fade-in">
+                    <div className="flex justify-between items-center gap-4">
+                        <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+                            인원 등록/관리 <span className="ml-2 text-sm font-normal text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 status-dot-active">HR 연동됨</span>
+                        </h2>
+                        <div className="relative">
+                            <input type="text" placeholder="검색..." className="pl-8 pr-3 py-1.5 text-sm border rounded outline-none focus:ring-2 focus:ring-blue-500" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                            <span className="absolute left-2 top-2 text-gray-400"><Icons.Search/></span>
+                        </div>
+                    </div>
+                    <div className="glass-panel overflow-hidden">
+                        <table className="min-w-full text-sm text-left">
+                            <thead className="bg-gray-50 border-b"><tr><th className="p-4">이름</th><th className="p-4">부서</th></tr></thead>
+                            <tbody>{filteredUsers.length > 0 ? filteredUsers.map(u=>(<tr key={u.id} className="hover:bg-gray-50 border-b last:border-0"><td className="p-4 font-medium">{u.name}</td><td className="p-4 text-gray-600">{u.dept}</td></tr>)) : <tr><td colSpan="2" className="p-8 text-center text-gray-400">데이터 없음</td></tr>}</tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        function LicenseManagement({ licenses, assignments, users, onAdd, onDelete, onUpdate }) {
+            const [form, setForm] = useState({ name: '', type: 'Subscription', paymentCycle: 'Yearly', seats: 1, cost: 0, expiryDate: '' });
+            const [editId, setEditId] = useState(null);
+            
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if(editId) onUpdate(editId, form); else onAdd(form);
+                setEditId(null); setForm({ name: '', type: 'Subscription', paymentCycle: 'Yearly', seats: 1, cost: 0, expiryDate: '' });
+            };
+
+            return (
+                <div className="space-y-6 animate-fade-in">
+                    <h2 className="text-2xl font-bold text-gray-800">라이선스 관리</h2>
+                    <div className="flex gap-6 flex-col lg:flex-row">
+                        <div className="glass-panel p-6 w-full lg:w-1/3">
+                            <h3 className="font-semibold mb-4">{editId ? '수정' : '등록'}</h3>
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <input className="w-full border rounded p-2 text-sm" placeholder="SW 명" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} required/>
+                                <select className="w-full border rounded p-2 text-sm" value={form.type} onChange={e=>setForm({...form,type:e.target.value})}>
+                                    <option value="Subscription">구독형</option><option value="Perpetual">영구형</option>
+                                </select>
+                                <input type="number" className="w-full border rounded p-2 text-sm" placeholder="수량" value={form.seats} onChange={e=>setForm({...form,seats:parseInt(e.target.value)||1})}/>
+                                <input type="number" className="w-full border rounded p-2 text-sm" placeholder="비용" value={form.cost} onChange={e=>setForm({...form,cost:parseInt(e.target.value)||0})}/>
+                                <button className="w-full bg-blue-600 text-white py-2 rounded font-bold">저장</button>
+                            </form>
+                        </div>
+                        <div className="glass-panel flex-1 overflow-hidden">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-gray-50 border-b"><tr><th className="p-4">SW명</th><th className="p-4 text-center">관리</th></tr></thead>
+                                <tbody>{licenses.map(l=>(<tr key={l.id} className="border-b hover:bg-gray-50"><td className="p-4">{l.name}</td><td className="p-4 text-center"><button onClick={()=>onDelete(l.id)} className="text-red-400"><Icons.Trash/></button></td></tr>))}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function AssignmentManagement({ users, licenses, assignments, onAssign, onUnassign }) {
+            const [selUser, setSelUser] = useState('');
+            const [selLic, setSelLic] = useState('');
+            const grouped = useMemo(() => { const g={}; assignments.forEach(a=>{if(!g[a.userId])g[a.userId]=[]; g[a.userId].push(a)}); return g; }, [assignments]);
+
+            return (
+                <div className="space-y-6 animate-fade-in">
+                    <h2 className="text-2xl font-bold">매칭 관리</h2>
+                    <div className="glass-panel p-6 flex gap-4">
+                        <select className="flex-1 border rounded p-2" value={selUser} onChange={e=>setSelUser(e.target.value)}><option value="">사용자 선택</option>{users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>
+                        <select className="flex-1 border rounded p-2" value={selLic} onChange={e=>setSelLic(e.target.value)}><option value="">라이선스 선택</option>{licenses.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select>
+                        <button onClick={()=>onAssign({userId:selUser, licenseId:selLic})} className="bg-blue-600 text-white px-6 py-2 rounded font-bold">할당</button>
+                    </div>
+                    <div className="glass-panel overflow-hidden">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-gray-50 border-b"><tr><th className="p-4">사용자</th><th className="p-4">보유 SW</th></tr></thead>
+                            <tbody>{Object.entries(grouped).map(([uid, ass])=>(<tr key={uid} className="border-b"><td className="p-4">{users.find(u=>u.id===uid)?.name}</td><td className="p-4 flex gap-2">{ass.map(a=><span key={a.id} className="bg-blue-50 px-2 py-1 rounded text-xs">{licenses.find(l=>l.id===a.licenseId)?.name}</span>)}</td></tr>))}</tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Main App ---
+        function App() {
+            const [ready, setReady] = useState(false);
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [users, setUsers] = useState([]);
+            const [licenses, setLicenses] = useState([]);
+            const [assignments, setAssignments] = useState([]);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                const initAuth = async () => {
+                    await signInAnonymously(slmsAuth);
+                    if (hrAuth) await signInAnonymously(hrAuth);
+                    setReady(true);
+                };
+                initAuth();
+            }, []);
+
+            useEffect(() => {
+                if (!ready) return;
+                const uLic = onSnapshot(collection(slmsDb, 'licenses'), (s) => setLicenses(s.docs.map(d=>({id:d.id, ...d.data()}))));
+                const uAss = onSnapshot(collection(slmsDb, 'assignments'), (s) => setAssignments(s.docs.map(d=>({id:d.id, ...d.data()}))));
+                let uHR = () => {};
+                if (hrDb) {
+                    uHR = onSnapshot(query(collectionGroup(hrDb, 'employees')), (s) => {
+                        const raw = s.docs.map(d => {
+                            const data = d.data();
+                            return { id: data.id || d.id, name: data.name || data.employeeName || '미입력', dept: data.dept || '미배정' };
+                        });
+                        setUsers([...new Map(raw.map(item => [item.id, item])).values()].sort((a,b)=>a.name.localeCompare(b.name, 'ko')));
+                        setLoading(false);
+                    });
+                }
+                return () => { uLic(); uAss(); uHR(); };
+            }, [ready]);
+
+            const handleDataOp = async (op, col, data, id) => {
+                if (op === 'add') await addDoc(collection(slmsDb, col), data);
+                else if (op === 'update') await updateDoc(doc(slmsDb, col, id), data);
+                else if (op === 'del') await deleteDoc(doc(slmsDb, col, id));
+            };
+
+            if (!ready) return <div className="h-screen flex items-center justify-center"><div className="spinner"></div></div>;
+
+            return (
+                <div className="flex h-screen overflow-hidden bg-[#f3f4f6]">
+                    <aside className="w-64 bg-slate-800 text-white flex flex-col shadow-xl z-20">
+                        <div className="p-6 border-b border-slate-700 font-bold text-blue-400 text-xl tracking-tight">SLMS</div>
+                        <nav className="flex-1 p-4 space-y-2">
+                            <NavButton active={activeTab==='dashboard'} onClick={()=>setActiveTab('dashboard')} icon={<Icons.Dashboard/>} label="대시보드"/>
+                            <NavButton active={activeTab==='users'} onClick={()=>setActiveTab('users')} icon={<Icons.Users/>} label="인원 등록/관리"/>
+                            <NavButton active={activeTab==='licenses'} onClick={()=>setActiveTab('licenses')} icon={<Icons.License/>} label="라이선스 관리"/>
+                            <NavButton active={activeTab==='assignments'} onClick={()=>setActiveTab('assignments')} icon={<Icons.Link/>} label="매칭 현황"/>
+                        </nav>
+                    </aside>
+                    <main className="flex-1 overflow-y-auto p-8 relative custom-scroll">
+                        {loading ? <div className="flex justify-center mt-20"><div className="spinner"></div></div> : (
+                            <div className="max-w-7xl mx-auto">
+                                {activeTab === 'dashboard' && <DashboardPage users={users} licenses={licenses} assignments={assignments} />}
+                                {activeTab === 'users' && <UserManagement users={users} />}
+                                {activeTab === 'licenses' && <LicenseManagement licenses={licenses} assignments={assignments} users={users} onAdd={d=>handleDataOp('add','licenses',d)} onDelete={id=>handleDataOp('del','licenses',null,id)} onUpdate={(id,d)=>handleDataOp('update','licenses',d,id)} />}
+                                {activeTab === 'assignments' && <AssignmentManagement users={users} licenses={licenses} assignments={assignments} onAssign={d=>handleDataOp('add','assignments',{...d, assignedAt:new Date().toISOString()})} onUnassign={id=>handleDataOp('del','assignments',null,id)} />}
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
